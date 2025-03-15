@@ -26,11 +26,15 @@ const car = {
     x: canvas.width / 2 - 30, // Center of road, accounting for car width
     y: canvas.height - 100,
     // width and height will be set after image loads
+    baseSpeed: 5,
+    baseTurning: 5,
     speed: 5,
+    turning: 5,
     health: 100,
     shakeOffset: 0,
     isShaking: false,
-    shakeDuration: 0
+    shakeDuration: 0,
+    shakeMagnitude: 1
 };
 
 const potholes = [];
@@ -109,7 +113,7 @@ function updateShake() {
             car.isShaking = false;
             car.shakeOffset = 0;
         } else {
-            car.shakeOffset = Math.sin(car.shakeDuration * 0.5) * 5;
+            car.shakeOffset = Math.sin(car.shakeDuration * 0.5) * 5 * car.shakeMagnitude;
         }
     }
 }
@@ -156,13 +160,18 @@ function drawTree(tree) {
 function update() {
     // Update shake effect
     updateShake();
+    
+    // Update car handling based on health
+    car.speed = car.baseSpeed * (0.5 + (car.health / 200)); // At 0 health, speed is 50% of base
+    car.turning = car.baseTurning * (0.5 + (car.health / 200)); // At 0 health, turning is 50% of base
+    car.shakeMagnitude = 1 + ((100 - car.health) / 25); // Shake more as health decreases
 
     // Move car with road boundaries
     if (keys.ArrowLeft) {
-        car.x = Math.max(ROAD_LEFT_BOUNDARY, car.x - car.speed);
+        car.x = Math.max(ROAD_LEFT_BOUNDARY, car.x - car.turning);
     }
     if (keys.ArrowRight) {
-        car.x = Math.min(ROAD_RIGHT_BOUNDARY - car.width, car.x + car.speed);
+        car.x = Math.min(ROAD_RIGHT_BOUNDARY - car.width, car.x + car.turning);
     }
     if (keys.ArrowUp && car.y > 0) car.y -= car.speed;
     if (keys.ArrowDown && car.y < canvas.height - car.height) car.y += car.speed;
@@ -256,9 +265,15 @@ function draw() {
     const carX = car.x + car.shakeOffset;
     ctx.save();  // Save the current context state
     ctx.translate(carX + car.width/2, car.y + car.height/2);  // Move to car center
+    
+    // Add health-based wobble
+    const healthWobble = Math.sin(Date.now() / 200) * ((100 - car.health) / 50);
+    
     // Optional: add rotation if you want the car to tilt slightly when moving
-    if (keys.ArrowLeft) ctx.rotate(-0.1);
-    if (keys.ArrowRight) ctx.rotate(0.1);
+    if (keys.ArrowLeft) ctx.rotate(-0.1 - healthWobble * 0.05);
+    else if (keys.ArrowRight) ctx.rotate(0.1 + healthWobble * 0.05);
+    else ctx.rotate(healthWobble * 0.05); // Slight wobble even when going straight
+    
     ctx.drawImage(
         carImage, 
         -car.width/2, -car.height/2,  // Center the image
@@ -310,6 +325,9 @@ function resetGame() {
     car.isShaking = false;
     car.shakeOffset = 0;
     car.shakeDuration = 0;
+    car.speed = car.baseSpeed;
+    car.turning = car.baseTurning;
+    car.shakeMagnitude = 1;
     trees.left = [];
     trees.right = [];
 }
