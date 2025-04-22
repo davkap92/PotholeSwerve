@@ -72,14 +72,35 @@ function createPothole() {
     const maxSize = 60;
     const size = minSize + Math.random() * (maxSize - minSize);
     
+    // Generate random irregularity for more realistic shape
+    const irregularity = 0.2 + Math.random() * 0.2; // 0.2-0.4
+    
     const pothole = {
         // Restrict x position to road area, accounting for pothole size
         x: ROAD_LEFT_BOUNDARY + Math.random() * (ROAD_WIDTH - size),
         y: -size,
         size: size,
         innerRing: size * 0.7,
-        damage: Math.ceil(size / 10)
+        damage: Math.ceil(size / 10),
+        irregularity: irregularity,
+        angle: Math.random() * Math.PI * 2, // Random rotation
+        hit: false, // Track if pothole has been hit
+        cracks: [] // Will store crack data
     };
+    
+    // Generate 3-6 cracks radiating from the pothole
+    const numCracks = 3 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < numCracks; i++) {
+        const angle = (i / numCracks) * Math.PI * 2 + Math.random() * 0.5;
+        const length = size * (0.7 + Math.random() * 0.5);
+        pothole.cracks.push({
+            angle: angle,
+            length: length,
+            width: 1 + Math.random() * 2,
+            curve: -0.2 + Math.random() * 0.4
+        });
+    }
+    
     potholes.push(pothole);
 }
 
@@ -87,22 +108,34 @@ function createPothole() {
 function checkCollision(car, pothole) {
     if (!car || !pothole) return false;
     
+    // Get car hitbox (slightly smaller than the visual car for better gameplay feel)
+    const carHitbox = {
+        x: car.x + car.width * 0.25,  // Reduce width by 50% (25% from each side)
+        y: car.y + car.height * 0.25, // Reduce height by 50% (25% from each side)
+        width: car.width * 0.5,       // 50% of original width
+        height: car.height * 0.5      // 50% of original height
+    };
+    
+    // Calculate pothole radius (reduced for better gameplay feel)
+    const potholeRadius = pothole.size * 0.4; // Use 40% of pothole size as collision radius
+    
     // Calculate center points of pothole
     const potholeCenter = {
         x: pothole.x + pothole.size/2,
         y: pothole.y + pothole.size/2
     };
     
-    // Calculate closest point on car to pothole center
-    const closestX = Math.max(car.x, Math.min(potholeCenter.x, car.x + car.width));
-    const closestY = Math.max(car.y, Math.min(potholeCenter.y, car.y + car.height));
+    // Calculate closest point on car hitbox to pothole center
+    const closestX = Math.max(carHitbox.x, Math.min(potholeCenter.x, carHitbox.x + carHitbox.width));
+    const closestY = Math.max(carHitbox.y, Math.min(potholeCenter.y, carHitbox.y + carHitbox.height));
     
     // Calculate distance between closest point and pothole center
     const distanceX = potholeCenter.x - closestX;
     const distanceY = potholeCenter.y - closestY;
     const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
     
-    return distanceSquared < (pothole.size/2 * pothole.size/2);
+    // Check if the distance is less than the pothole radius squared
+    return distanceSquared < (potholeRadius * potholeRadius);
 }
 
 // Shake effect
@@ -197,10 +230,10 @@ function update() {
         pothole.y += gameSpeed;
         
         // Check collision
-        if (checkCollision(car, pothole)) {
+        if (!pothole.hit && checkCollision(car, pothole)) {
             car.health -= pothole.damage;  // Use variable damage
             healthFill.style.width = `${car.health}%`;
-            potholes.splice(i, 1);
+            pothole.hit = true; // Mark as hit instead of removing
             
             // Start shake effect - bigger potholes shake more
             car.isShaking = true;
@@ -216,7 +249,9 @@ function update() {
         // Remove off-screen potholes
         if (pothole.y > canvas.height) {
             potholes.splice(i, 1);
-            score++;
+            if (!pothole.hit) {
+                score++; // Only increment score if successfully avoided
+            }
         }
     }
 
@@ -285,25 +320,92 @@ function draw() {
     potholes.forEach(pothole => {
         if (!pothole) return;
         
-        // Draw outer circle
+        const centerX = pothole.x + pothole.size/2;
+        const centerY = pothole.y + pothole.size/2;
+        
+        // Draw cracks first (underneath the pothole)
+        ctx.strokeStyle = '#333';
+        pothole.cracks.forEach(crack => {
+            ctx.beginPath();
+            ctx.lineWidth = crack.width;
+            
+            // Start at the edge of the pothole
+            const startX = centerX + Math.cos(crack.angle + pothole.angle) * (pothole.size/2 * 0.9);
+            const startY = centerY + Math.sin(crack.angle + pothole.angle) * (pothole.size/2 * 0.9);
+            
+            ctx.moveTo(startX, startY);
+            
+            // Create a curved crack
+            const controlX = startX + Math.cos(crack.angle + pothole.angle + crack.curve) * (crack.length * 0.5);
+            const controlY = startY + Math.sin(crack.angle + pothole.angle + crack.curve) * (crack.length * 0.5);
+            
+            const endX = startX + Math.cos(crack.angle + pothole.angle) * crack.length;
+            const endY = startY + Math.sin(crack.angle + pothole.angle) * crack.length;
+            
+            ctx.quadraticCurveTo(controlX, controlY, endX, endY);
+            ctx.stroke();
+        });
+        
+        // Draw irregular outer edge
         ctx.beginPath();
-        ctx.arc(pothole.x + pothole.size/2, pothole.y + pothole.size/2, 
-                pothole.size/2, 0, Math.PI * 2);
-        ctx.fillStyle = '#1a1a1a';
+        for (let angle = 0; angle < Math.PI * 2; angle += 0.1) {
+            const radius = (pothole.size/2) * (1 + Math.sin(angle * 5 + pothole.angle) * pothole.irregularity);
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
+            
+            if (angle === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        ctx.closePath();
+        ctx.fillStyle = pothole.hit ? '#4a4a4a' : '#1a1a1a'; // Lighter color if hit
         ctx.fill();
         
-        // Draw inner circle
+        // Draw irregular inner circle
         ctx.beginPath();
-        ctx.arc(pothole.x + pothole.size/2, pothole.y + pothole.size/2, 
-                pothole.innerRing/2, 0, Math.PI * 2);
-        ctx.fillStyle = '#000000';
+        for (let angle = 0; angle < Math.PI * 2; angle += 0.2) {
+            const radius = (pothole.innerRing/2) * (1 + Math.sin(angle * 4 + pothole.angle) * pothole.irregularity);
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
+            
+            if (angle === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        ctx.closePath();
+        ctx.fillStyle = pothole.hit ? '#333333' : '#000000'; // Lighter color if hit
         ctx.fill();
         
-        // Add depth effect
+        // Add texture and depth effect
         ctx.beginPath();
-        ctx.arc(pothole.x + pothole.size/2 - 5, pothole.y + pothole.size/2 - 5, 
-                pothole.size/6, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.ellipse(
+            centerX - 5, 
+            centerY - 5, 
+            pothole.size/6, 
+            pothole.size/8, 
+            pothole.angle, 
+            0, 
+            Math.PI * 2
+        );
+        ctx.fillStyle = pothole.hit ? 'rgba(50, 50, 50, 0.6)' : 'rgba(0, 0, 0, 0.6)';
+        ctx.fill();
+        
+        // Add a subtle shadow
+        ctx.beginPath();
+        ctx.ellipse(
+            centerX + 2,
+            centerY + 3,
+            pothole.size/2 + 4,
+            pothole.size/2 + 2,
+            pothole.angle,
+            0,
+            Math.PI * 2
+        );
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
         ctx.fill();
     });
 
