@@ -1,5 +1,4 @@
 const canvas = document.getElementById('gameCanvas');
-// const ctx = canvas.getContext('2d');  // Remove 2D context
 const healthFill = document.getElementById('healthFill');
 const speedoElement = document.getElementById('speedometer');
 
@@ -15,10 +14,6 @@ const ROAD_WIDTH = ROAD_RIGHT_BOUNDARY - ROAD_LEFT_BOUNDARY;
 
 // Game objects
 const car = {
-    // baseSpeed: 0.5, // Related to forward movement, keep for now if needed later
-    // baseTurning: 0.5, // Replaced by acceleration/max speed
-    // speed: 0.5,
-    // turning: 0.5,
     velocityX: 0, // Add sideways velocity state
     baseX: 0, // Add base X position for shake calculation
     velocityZ: 0, // Forward/backward velocity
@@ -119,8 +114,6 @@ function createPothole() {
 
     // Create the 3D mesh for the pothole
     const geometry = new THREE.CircleGeometry(size / 2, 16); 
-    // Restore original material, maybe slightly lighter tint
-    // const material = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // DEBUG
     const material = new THREE.MeshStandardMaterial({ 
         map: roadTexture, 
         color: 0x777777, // Lighter dark tint
@@ -379,13 +372,15 @@ function updateSpeedBumps() {
 
         // Check collision
         if (!bump.hit && !bump.safelyCrossed && checkCollision(carMesh, bump.mesh)) {
-            console.log("Speed bump collision at velocity:", car.velocityZ, "threshold:", bump.damageThreshold);
             
             // IMPORTANT: Make sure we're strictly comparing speed
             const currentSpeed = Math.max(0, car.velocityZ); // Ensure it's never negative
             const isTooFast = currentSpeed > bump.damageThreshold;
             
             if (isTooFast) {
+                console.log("Car is going too fast - apply damage");
+                console.log("currentSpeed:", currentSpeed);
+                console.log("velocityZ  :", car.velocityZ);
                 // Car is going too fast - apply damage
                 const speedFactor = (currentSpeed - bump.damageThreshold);
                 const damage = Math.ceil(bump.damageAmount * (1 + speedFactor * 0.5)); // Damage scales with excess speed
@@ -413,31 +408,7 @@ function updateSpeedBumps() {
                     return true; // Indicate game over
                 }
                 }
-            // } else {
-            //     // Safe speed
-            //     console.log("Safe crossing at speed:", currentSpeed);
-                
-            //     // Car safely crossed at slow speed - provide visual feedback
-            //     if (bump.mesh && bump.mesh.material) {
-            //         bump.mesh.material.color.setHex(0x00CC00); // Green for safely crossed
-            //     }
-                
-            //     // Small vibration effect for feedback
-            //     car.isShaking = true;
-            //     car.shakeDuration = 5; // Short duration
-            //     car.shakeMagnitude = 0.2; // Mild shake
-                
-            //     bump.safelyCrossed = true; // Mark as safely crossed
-                
-            //     // Add bonus score for crossing properly
-            //     score += 2;
-                
-            //     // Update the score display immediately
-            //     const scoreDisplay = document.getElementById('scoreDisplay');
-            //     if (scoreDisplay) {
-            //         scoreDisplay.textContent = `Score: ${score}`;
-            //     }
-            // }
+            
         }
 
         // Remove off-screen speed bumps
@@ -457,30 +428,6 @@ function updateUI() {
         const displaySpeed = Math.round(car.velocityZ * 40); // Adjust multiplier for feel
         speedoElement.textContent = `Speed: ${displaySpeed}`;
         
-        // Add warning about speed bumps if they exist
-        const speedBumpsAhead = speedBumps.filter(bump => 
-            bump.mesh && 
-            bump.mesh.position.z < camera.position.z && 
-            bump.mesh.position.z > camera.position.z - 300 && 
-            !bump.hit && 
-            !bump.safelyCrossed
-        );
-        
-        // if (speedBumpsAhead.length > 0) {
-        //     // Use the first speed bump in the filtered array for threshold
-        //     const firstBump = speedBumpsAhead[0];
-        //     const safeSpeed = Math.round(firstBump.damageThreshold * 40);
-            
-        //     // speedoElement.textContent += ` - SLOW DOWN FOR SPEED BUMPS! (Safe speed: ${safeSpeed})`;
-            
-        //     if (car.velocityZ > firstBump.damageThreshold) {
-        //         speedoElement.style.color = 'red';
-        //     } else {
-        //         speedoElement.style.color = 'green';
-        //     }
-        // } else {
-        //     speedoElement.style.color = 'white';
-        // }
     }
     
     // Update Score
@@ -502,17 +449,29 @@ function update() {
     updateUI();
 
     // Spawning Logic
-    const baseSpawnRate = 0.005;
-    const speedAdjustedSpawnRate = baseSpawnRate * (1 + car.velocityZ / MAX_SPEED);
-    if (Math.random() < speedAdjustedSpawnRate * 0.5) {
+    const baseTreeSpawnRate = 0.08;  // More frequent for trees
+    const basePotholeSpawnRate = 0.004; // Less frequent for potholes
+    const baseSpeedBumpRate = 0.002;  // Even less frequent for speed bumps
+    
+    // Adjust spawn rates based on speed
+    const treeSpawnRate = baseTreeSpawnRate * (1 + car.velocityZ / MAX_SPEED);
+    const potholeSpawnRate = basePotholeSpawnRate * (1 + car.velocityZ / MAX_SPEED);
+    const speedBumpSpawnRate = baseSpeedBumpRate * (1 + car.velocityZ / MAX_SPEED);
+
+    // Tree spawning
+    if (Math.random() < treeSpawnRate) {
         if (trees.left.length < 15) createTree('left');
         if (trees.right.length < 15) createTree('right');
     }
-    if (Math.random() < speedAdjustedSpawnRate) {
-         if (potholes.length < 10) createPothole();
+
+    // Pothole spawning
+    if (Math.random() < potholeSpawnRate) {
+        if (potholes.length < 10) createPothole();
     }
-    if (Math.random() < speedAdjustedSpawnRate * 0.15) { // Reduced from 0.3 to 0.15
-        if (speedBumps.length < 2) createSpeedBump(); // Reduced from 3 to 2 maximum
+
+    // Speed bump spawning
+    if (Math.random() < speedBumpSpawnRate) {
+        if (speedBumps.length < 2) createSpeedBump();
     }
 
     // Road Texture Scrolling
@@ -581,7 +540,6 @@ function resetGame() {
 
 // --- THREE.JS Setup ---
 const scene = new THREE.Scene();
-// scene.background = new THREE.Color(0x87CEEB); // Will be replaced by HDRI
 
 const camera = new THREE.PerspectiveCamera( 75, canvas.width / canvas.height, 0.1, 1000 );
 const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
@@ -663,10 +621,6 @@ rgbeLoader.load('environment.hdr', function(texture) {
                     // console.log(...) // Keep material log if needed for further debug
                     node.castShadow = true;
                     if (node.material) {
-                        // Darken the material color to reduce perceived exposure
-                        // if (node.material.color) {
-                        //     node.material.color.multiplyScalar(1.4); 
-                        // }
                         node.material.needsUpdate = true; // Force material update
                     }
                 }
@@ -761,11 +715,7 @@ scene.add(roadPlane);
 
 // Game loop
 function gameLoop() {
-    // Debug logging (every 60 frames approximately)
-    if (Math.floor(performance.now() / 1000) % 2 === 0) {
-        console.log(`Car velocity: ${car.velocityZ.toFixed(2)}, W key: ${keys.w}, MAX_SPEED: ${MAX_SPEED}`);
-    }
-    
+
     // Store pre-update velocity
     const preUpdateVelocity = car.velocityZ;
     
@@ -805,7 +755,7 @@ function createSpeedBump() {
     
     const bumpData = {
         size: width,
-        damageThreshold: 1.5, // Lowered from 1.8 to better match new acceleration
+        damageThreshold: 1.8, // Lowered from 1.8 to better match new acceleration
         damageAmount: Math.ceil(width * 1.5),
         shakeMagnitudeMultiplier: 0.2,
         hit: false,
