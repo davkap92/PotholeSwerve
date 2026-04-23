@@ -25,15 +25,18 @@ const car = {
 };
 
 // Add Handling Constants
-const BASE_TURN_ACCELERATION = 0.05; // How quickly the car speeds up sideways
-const BASE_MAX_TURN_SPEED = 0.8;    // Max sideways speed
-const FRICTION = 0.95;              // Regular friction (e.g., air resistance)
-const STOPPING_FRICTION = 0.85;     // Extra friction when keys are released
+const BASE_TURN_ACCELERATION = 0.06; // How quickly the car speeds up sideways
+const BASE_MAX_TURN_SPEED = 0.9;    // Max sideways speed
+const FRICTION = 0.92;              // Lateral friction when turning
+const STOPPING_FRICTION = 0.80;     // Extra friction when lateral keys released
 
-const FORWARD_ACCELERATION = 0.03; // Reduced from 0.1 for more gradual acceleration
-const BRAKING_FORCE = 0.06;       // How quickly the car slows down
+const FORWARD_ACCELERATION = 0.12; // Peak acceleration (tapers near max speed)
+const BRAKING_FORCE = 0.08;       // How quickly the car slows down
 const MAX_SPEED = 4;             // Maximum forward speed
-const FORWARD_FRICTION = 0.96;    // Friction affecting forward speed - only applied when not accelerating
+const FORWARD_FRICTION = 0.985;   // Gentle coast deceleration - like engine braking
+
+// Cache car width to avoid recalculating bounding box every frame
+let cachedCarWidth = null;
 
 // Add carMesh global variable (will hold the loaded model)
 let carMesh = null;
@@ -59,6 +62,7 @@ let keys = {
     w: false,
     s: false
 };
+let gameOver = false;
 
 // Event listeners - DIRECTLY modify 'keys.w' state, ignoring repeats
 document.addEventListener('keydown', (e) => {
@@ -69,7 +73,6 @@ document.addEventListener('keydown', (e) => {
     // Handle 'w' and 's' keys for acceleration and braking
     if (key === 'w') {
         keys.w = true;
-        console.log("W key pressed - keys.w:", keys.w); // Debug log
     } else if (key === 's') {
         keys.s = true;
     }
@@ -87,7 +90,6 @@ document.addEventListener('keyup', (e) => {
     // Handle 'w' and 's' keys for acceleration and braking
     if (key === 'w') {
         keys.w = false;
-        console.log("W key released - keys.w:", keys.w); // Debug log
     } else if (key === 's') {
         keys.s = false;
     }
@@ -174,37 +176,49 @@ function updateShake() {
 
 // Add new function to create trees
 function createTree(side) {
-    const minHeight = 15; // Adjust size for 3D units
-    const maxHeight = 25;
+    const minHeight = 12; // Reduced height for better proportion
+    const maxHeight = 20;
     const trunkHeight = minHeight + Math.random() * (maxHeight - minHeight);
-    const leafHeight = trunkHeight * 1.5; // Leaves taller than trunk
-    const trunkWidth = 2;
-    const leafRadius = 5;
+    const leafHeight = trunkHeight * 0.8; // Leaves shorter than trunk for more realistic look
+    const trunkRadius = 0.8 + Math.random() * 0.4; // Variable trunk thickness
+    const leafRadius = trunkRadius * 2.5 + Math.random() * 2; // Leaf size based on trunk
 
     // Create Tree Group
     const treeGroup = new THREE.Group();
 
-    // Create Trunk Mesh
-    const trunkGeometry = new THREE.BoxGeometry(trunkWidth, trunkHeight, trunkWidth);
-    const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x5D4037 }); // Brown
+    // Create Trunk Mesh - using cylinder for more realistic tree trunk
+    const trunkGeometry = new THREE.CylinderGeometry(trunkRadius, trunkRadius * 1.1, trunkHeight, 8);
+    // Add natural color variation to trunks (browns)
+    const trunkColors = [0x5D4037, 0x6D4C41, 0x4E342E, 0x795548, 0x3E2723];
+    const trunkColor = trunkColors[Math.floor(Math.random() * trunkColors.length)];
+    const trunkMaterial = new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 0.9, metalness: 0.0 }); 
     const trunkMesh = new THREE.Mesh(trunkGeometry, trunkMaterial);
     // Position trunk so its bottom is at the group's origin (y=0)
-    trunkMesh.position.y = trunkHeight / 2; // Center of the box is at half the height
+    trunkMesh.position.y = trunkHeight / 2; 
     treeGroup.add(trunkMesh);
 
-    // Create Leaves Mesh
-    const leavesGeometry = new THREE.ConeGeometry(leafRadius, leafHeight, 8); // Radius, height, segments
-    const leavesMaterial = new THREE.MeshLambertMaterial({ color: 0x2E7D32 }); // Green
+    // Create Leaves Mesh - sphere for rounded autumn tree shape
+    const leavesGeometry = new THREE.SphereGeometry(leafRadius, 8, 7);
+    // Autumn foliage colors to match the park HDRI background
+    const leafColors = [0xD4730A, 0xC8860E, 0xB8621C, 0xE8A020, 0x8B5E1A, 0xA0522D, 0xCD853F];
+    const leafColor = leafColors[Math.floor(Math.random() * leafColors.length)];
+    const leavesMaterial = new THREE.MeshStandardMaterial({ color: leafColor, roughness: 0.9, metalness: 0.0 }); 
     const leavesMesh = new THREE.Mesh(leavesGeometry, leavesMaterial);
-    // Position base of the cone leaves at the top of the trunk
-    leavesMesh.position.y = trunkHeight; // Cone's origin is at its base center
+    // Position sphere so it sits on top of the trunk with slight overlap
+    leavesMesh.position.y = trunkHeight + leafRadius * 0.6; 
     treeGroup.add(leavesMesh);
 
-    // Position the entire group
-    const sideOffset = ROAD_WIDTH / 2 + 15 + Math.random() * 20; // Distance from road edge
+    // Position the entire group with more natural variation
+    const baseDistance = ROAD_WIDTH / 2 + 8; // Base distance from road edge
+    const randomOffset = Math.random() * 25; // More variation in distance
+    const sideOffset = baseDistance + randomOffset;
     treeGroup.position.x = side === 'left' ? -sideOffset : sideOffset;
-    // Align group's origin (base of the trunk) precisely with road plane Y, plus a small downward offset
-    treeGroup.position.y = roadPlane.position.y - 0.5; // Added - 0.5 offset
+    
+    // Add slight random rotation to avoid uniform appearance
+    treeGroup.rotation.y = (Math.random() - 0.5) * 0.5; // Small random Y rotation
+    
+    // Align group's origin (base of the trunk) precisely with road plane Y
+    treeGroup.position.y = roadPlane.position.y - 0.2; 
     treeGroup.position.z = -500; // Start far away
 
     // Add group to scene and store reference
@@ -220,29 +234,22 @@ function createTree(side) {
     // Enable shadow casting for tree parts
     trunkMesh.castShadow = true;
     leavesMesh.castShadow = true;
-    // Tree parts could receive shadows too, but less critical for these simple shapes
-    // trunkMesh.receiveShadow = true;
-    // leavesMesh.receiveShadow = true;
 }
 
 // --- Update Car Physics and Position ---
 function updateCar() {
     if (!carMesh) return;
 
-    // Modified speed control for more gradual acceleration
+    // Tapered acceleration: fast off the line, smooth near max speed
     if (keys.w) {
-        // Add acceleration but don't immediately set to max speed
-        car.velocityZ += FORWARD_ACCELERATION;
-        
-        // Cap at MAX_SPEED
-        if (car.velocityZ > MAX_SPEED) {
-            car.velocityZ = MAX_SPEED;
-        }
+        const speedRatio = car.velocityZ / MAX_SPEED;
+        const taperFactor = 1 - speedRatio * 0.85; // Still accelerates at top but gently
+        car.velocityZ += FORWARD_ACCELERATION * taperFactor;
+        if (car.velocityZ > MAX_SPEED) car.velocityZ = MAX_SPEED;
     } else if (keys.s) {
-        // Braking - increased braking force for quicker stops
-        car.velocityZ -= BRAKING_FORCE * 2; // Double braking force
-        // Apply additional friction when braking
-        car.velocityZ *= 0.85; // Increased from 0.9 for faster deceleration
+        // Braking
+        car.velocityZ -= BRAKING_FORCE;
+        car.velocityZ *= STOPPING_FRICTION;
     } else {
         // No keys - apply friction
         car.velocityZ *= FORWARD_FRICTION;
@@ -256,9 +263,10 @@ function updateCar() {
         car.velocityZ = 0;
     }
 
-    // Lateral Movement (using keys.ArrowLeft/Right)
+    // Lateral Movement - speed-dependent: harder to snap direction at high speed
+    const speedFactor = 1 - (car.velocityZ / MAX_SPEED) * 0.35; // Steering tightens at speed
     const healthFactor = (0.5 + (car.health / 200));
-    const currentLateralAcceleration = BASE_TURN_ACCELERATION * healthFactor;
+    const currentLateralAcceleration = BASE_TURN_ACCELERATION * healthFactor * speedFactor;
     const currentMaxLateralSpeed = BASE_MAX_TURN_SPEED * healthFactor;
     let appliedLateralFriction = FRICTION;
     if (!keys.ArrowLeft && !keys.ArrowRight && Math.abs(car.velocityX) > 0.01) {
@@ -277,8 +285,20 @@ function updateCar() {
     }
     car.baseX += car.velocityX;
 
-    // Boundary checks (remain the same)
-    const carWidth = new THREE.Box3().setFromObject(carMesh).getSize(new THREE.Vector3()).x;
+    // Visual tilt and yaw when turning
+    if (carMesh) {
+        const targetTilt = -car.velocityX * 0.08;
+        carMesh.rotation.z = carMesh.rotation.z + (targetTilt - carMesh.rotation.z) * 0.15;
+        // Slight nose yaw toward turn direction
+        const targetYaw = Math.PI + car.velocityX * 0.06;
+        carMesh.rotation.y = carMesh.rotation.y + (targetYaw - carMesh.rotation.y) * 0.1;
+    }
+
+    // Boundary checks - use cached width, only recalculate once after load
+    if (!cachedCarWidth) {
+        cachedCarWidth = new THREE.Box3().setFromObject(carMesh).getSize(new THREE.Vector3()).x;
+    }
+    const carWidth = cachedCarWidth;
     const leftBoundary = -ROAD_WIDTH / 2 + carWidth / 2;
     const rightBoundary = ROAD_WIDTH / 2 - carWidth / 2;
     if (car.baseX < leftBoundary) {
@@ -299,8 +319,8 @@ function updateTrees(treesArray) {
         const tree = treesArray[i]; // This is treeData object
         if (!tree || !tree.mesh) continue;
 
-        // Move tree group towards camera
-        tree.mesh.position.z += car.velocityZ * 0.7; // Slower parallax speed
+        // Move tree group towards camera at the same speed as other objects
+        tree.mesh.position.z += car.velocityZ;
 
         // Remove off-screen trees
         if (tree.mesh.position.z > camera.position.z) {
@@ -339,8 +359,10 @@ function updatePotholes() {
             car.shakeDuration = 15 + pothole.damage; 
 
             if (car.health <= 0) {
-                alert('Game Over! Score: ' + score);
-                resetGame();
+                gameOver = true;
+                document.getElementById('finalScore').textContent = 'Score: ' + score;
+                document.getElementById('gameOverScreen').style.display = 'flex';
+                document.getElementById('hud').style.display = 'none';
                 return true; // Exit update early
             }
         }
@@ -403,8 +425,10 @@ function updateSpeedBumps() {
                 bump.hit = true; // Mark as hit to prevent repeated damage
 
                 if (car.health <= 0) {
-                    alert('Game Over! Score: ' + score);
-                    resetGame();
+                    gameOver = true;
+                    document.getElementById('finalScore').textContent = 'Score: ' + score;
+                    document.getElementById('gameOverScreen').style.display = 'flex';
+                    document.getElementById('hud').style.display = 'none';
                     return true; // Indicate game over
                 }
                 }
@@ -439,7 +463,14 @@ function updateUI() {
 
 // Update game state
 function update() {
+    if (gameOver) return;
+    
     updateCar(); // Update car physics directly using the 'keys' state managed by listeners
+
+    // Camera bob based on speed for sense of motion
+    const bobFrequency = 0.08;
+    const bobAmplitude = 0.15;
+    camera.position.y = 25 + Math.sin(Date.now() * bobFrequency * 0.01) * bobAmplitude * (car.velocityZ / MAX_SPEED);
 
     // Obstacle, Scenery, UI updates
     if (updatePotholes()) return;
@@ -449,7 +480,7 @@ function update() {
     updateUI();
 
     // Spawning Logic
-    const baseTreeSpawnRate = 0.08;  // More frequent for trees
+    const baseTreeSpawnRate = 0.008;  // More frequent for trees
     const basePotholeSpawnRate = 0.004; // Less frequent for potholes
     const baseSpeedBumpRate = 0.002;  // Even less frequent for speed bumps
     
@@ -476,7 +507,7 @@ function update() {
 
     // Road Texture Scrolling
     if (roadMaterial && roadMaterial.map) {
-        roadMaterial.map.offset.y -= car.velocityZ * 0.01;
+        roadMaterial.map.offset.y -= car.velocityZ * 0.015;
         if (roadMaterial.map.offset.y < -1) roadMaterial.map.offset.y += 1;
         if (roadMaterial.normalMap) roadMaterial.normalMap.offset.y = roadMaterial.map.offset.y;
         if (roadMaterial.roughnessMap) roadMaterial.roughnessMap.offset.y = roadMaterial.map.offset.y;
@@ -512,6 +543,7 @@ function resetGame() {
     speedBumps.length = 0; // Clear the array
     
     score = 0;
+    cachedCarWidth = null; // Recalculate on next frame
     car.velocityZ = 0; // Reset forward speed
     car.velocityX = 0; // Reset lateral speed
     car.baseX = 0; // Reset base X
@@ -548,20 +580,19 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding; 
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0; // Adjusted exposure
+renderer.toneMappingExposure = 1.5; // Increased exposure for better visibility
 
-// Position Camera
-camera.position.z = 50;
+// Position Camera - Better positioning for visibility
+camera.position.z = 70;
 camera.position.y = 40;
 camera.rotation.x = -Math.PI / 6;
 
-// Add Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.1); // Keep low
+// Add Lighting - Improved visibility
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); // Increased ambient light
 scene.add(ambientLight);
-// Restore directional light, but keep intensity low (mainly for shadows)
-// Increase intensity slightly to help show texture
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5); // Increased from 0.2 to 0.5
-directionalLight.position.set(0, 50, 20);
+// Brighter directional light for better visibility
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // Increased intensity
+directionalLight.position.set(0, 30, 20); // Adjusted position
 directionalLight.castShadow = true;
 
 // Configure shadow properties (optional, adjust for quality/performance)
@@ -583,89 +614,143 @@ scene.add(directionalLight);
 
 // --- Load Environment Map (HDRI) --- 
 const rgbeLoader = new THREE.RGBELoader();
-rgbeLoader.load('environment.hdr', function(texture) {
-    // --- HDRI Loaded Successfully ---
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-    scene.background = texture;
-    scene.environment = texture;
-    console.log("Environment map loaded.");
+rgbeLoader.load(
+    'environment.hdr',
+    function(texture) {
+        // --- HDRI Loaded Successfully ---
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        scene.background = texture;
+        scene.environment = texture;
+        console.log("Environment map loaded.");
 
-    // --- NOW Load Car Model (Inside HDRI Callback) --- 
-    const loader = new THREE.GLTFLoader();
-    loader.load(
-        'car.glb',
-        function (gltf) {
-            // --- Car Model Loaded Successfully ---
-            carMesh = gltf.scene;
-            console.log("Car model loaded successfully.", carMesh);
+        // Hide loading screen
+        document.getElementById('loadingScreen').style.display = 'none';
 
-            // Scale the model
-            const desiredHeight = 17; // User adjusted value
-            const boundingBox = new THREE.Box3().setFromObject(carMesh);
-            const currentSize = boundingBox.getSize(new THREE.Vector3());
-            const scaleFactor = desiredHeight / currentSize.y;
-            carMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
+        // --- NOW Load Car Model (Inside HDRI Callback) --- 
+        const loader = new THREE.GLTFLoader();
+        loader.load(
+            'car.glb',
+            function (gltf) {
+                // --- Car Model Loaded Successfully ---
+                carMesh = gltf.scene;
+                console.log("Car model loaded successfully.", carMesh);
 
-            // Position the model
-            carMesh.position.x = 0;
-            const scaledBox = new THREE.Box3().setFromObject(carMesh);
-            carMesh.position.y = roadPlane.position.y - scaledBox.min.y;
-            carMesh.position.z = camera.position.z - 70;
+                // Scale the model
+                const desiredHeight = 16; // Reduced from 22 to make car smaller and more visible
+                const boundingBox = new THREE.Box3().setFromObject(carMesh);
+                const currentSize = boundingBox.getSize(new THREE.Vector3());
+                const scaleFactor = desiredHeight / currentSize.y;
+                carMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-            // Rotate the car 180 degrees to face forward
-            carMesh.rotation.y = Math.PI; 
+                // Position the model - closer to camera for better visibility
+                carMesh.position.x = 0;
+                const scaledBox = new THREE.Box3().setFromObject(carMesh);
+                carMesh.position.y = roadPlane.position.y - scaledBox.min.y;
+                carMesh.position.z = camera.position.z - 45;
 
-            // Enable shadows and check materials
-            carMesh.traverse(function (node) {
-                if (node.isMesh) {
-                    // console.log(...) // Keep material log if needed for further debug
-                    node.castShadow = true;
-                    if (node.material) {
-                        node.material.needsUpdate = true; // Force material update
+                // Rotate the car 180 degrees to face forward
+                carMesh.rotation.y = Math.PI; 
+
+                // Enable shadows and check materials - Enhanced car visibility
+                carMesh.traverse(function (node) {
+                    if (node.isMesh) {
+                        node.castShadow = true;
+                        if (node.material) {
+                            // Reduce HDRI influence so the car's original colours show through
+                            node.material.envMapIntensity = 0.3;
+                            node.material.needsUpdate = true;
+                        }
                     }
-                }
-            });
+                });
 
-            
-            scene.add(carMesh); // Add car AFTER HDRI is ready and car is processed
-        },
-        // Car progress callback
-        function (xhr) {
-            console.log(('Car Model ' + (xhr.loaded / xhr.total * 100)) + '% loaded');
-        },
-        // Car error callback
-        function (error) {
-            console.error('An error happened loading the car model:', error);
-        }
-    );
-    // --- End Car Model Loading ---
+                
+                scene.add(carMesh); // Add car AFTER HDRI is ready and car is processed
+            },
+            // Car progress callback
+            function (xhr) {
+                console.log(('Car Model ' + (xhr.loaded / xhr.total * 100)) + '% loaded');
+            },
+            // Car error callback
+            function (error) {
+                console.error('An error happened loading the car model:', error);
+                // Create a simple fallback car
+                createFallbackCar();
+            }
+        );
+        // --- End Car Model Loading ---
 
-}, 
-// HDRI progress callback (optional)
-undefined, 
-// HDRI error callback
-function(error) {
-    console.error("Error loading environment map:", error);
-    scene.background = new THREE.Color(0x333333); // Fallback background
-});
+    }, 
+    // HDRI progress callback
+    function (xhr) {
+        // Update loading progress
+        const progressPercent = Math.round((xhr.loaded / xhr.total) * 100);
+        document.getElementById('progressBar').style.width = progressPercent + '%';
+        document.getElementById('loadingText').textContent = `Loading environment... ${progressPercent}%`;
+    },
+    // HDRI error callback
+    function(error) {
+        console.error("Error loading environment map:", error);
+        scene.background = new THREE.Color(0x333333); // Fallback background
+        // Hide loading screen even on error
+        document.getElementById('loadingScreen').style.display = 'none';
+        // Try to load car anyway without environment
+        loadCarWithoutEnvironment();
+    }
+);
 // --- End Load Environment Map ---
 
 // Create Road Plane
 const textureLoader = new THREE.TextureLoader();
 
-// Load Diffuse (Color) Texture
-const roadTexture = textureLoader.load('road_diffuse.jpg');
+// Load Diffuse (Color) Texture with error handling
+const roadTexture = textureLoader.load(
+    'road_diffuse.jpg',
+    undefined,
+    undefined,
+    function (error) {
+        console.error('Error loading road diffuse texture:', error);
+        // Create a fallback texture
+        const fallbackCanvas = document.createElement('canvas');
+        fallbackCanvas.width = 64;
+        fallbackCanvas.height = 64;
+        const ctx = fallbackCanvas.getContext('2d');
+        ctx.fillStyle = '#4a4a4a';
+        ctx.fillRect(0, 0, 64, 64);
+        roadTexture.image = fallbackCanvas;
+        roadTexture.needsUpdate = true;
+    }
+);
 roadTexture.wrapS = THREE.RepeatWrapping;
 roadTexture.wrapT = THREE.RepeatWrapping;
-roadTexture.repeat.set(8, 50); // <<< Adjusted repetition
+// Reduced repetition further to minimize tiling effect
+roadTexture.repeat.set(3, 15); 
+roadTexture.wrapS = THREE.RepeatWrapping;
+roadTexture.wrapT = THREE.RepeatWrapping;
 const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
 roadTexture.anisotropy = maxAnisotropy;
 roadTexture.encoding = THREE.sRGBEncoding;
-roadTexture.minFilter = THREE.LinearMipmapLinearFilter;
-roadTexture.magFilter = THREE.NearestFilter;           // <<< Changed to NearestFilter
+// Improved filtering to reduce blurry/muddy appearance
+roadTexture.minFilter = THREE.LinearFilter;
+roadTexture.magFilter = THREE.LinearFilter;
 
-// Load Normal Texture
-const roadNormalMap = textureLoader.load('road_normal.jpg');
+// Load Normal Texture with error handling
+const roadNormalMap = textureLoader.load(
+    'road_normal.jpg',
+    undefined,
+    undefined,
+    function (error) {
+        console.error('Error loading road normal texture:', error);
+        // Create a fallback normal map (flat blue)
+        const fallbackCanvas = document.createElement('canvas');
+        fallbackCanvas.width = 64;
+        fallbackCanvas.height = 64;
+        const ctx = fallbackCanvas.getContext('2d');
+        ctx.fillStyle = '#7f7fff'; // Flat normal
+        ctx.fillRect(0, 0, 64, 64);
+        roadNormalMap.image = fallbackCanvas;
+        roadNormalMap.needsUpdate = true;
+    }
+);
 roadNormalMap.wrapS = THREE.RepeatWrapping;
 roadNormalMap.wrapT = THREE.RepeatWrapping;
 roadNormalMap.repeat.set(8, 50); // <<< Match repetition
@@ -673,8 +758,24 @@ roadNormalMap.anisotropy = maxAnisotropy;
 roadNormalMap.minFilter = THREE.LinearMipmapLinearFilter;
 roadNormalMap.magFilter = THREE.NearestFilter;           // <<< Changed to NearestFilter
 
-// Load Roughness Texture
-const roadRoughnessMap = textureLoader.load('road_roughness.jpg');
+// Load Roughness Texture with error handling
+const roadRoughnessMap = textureLoader.load(
+    'road_roughness.jpg',
+    undefined,
+    undefined,
+    function (error) {
+        console.error('Error loading road roughness texture:', error);
+        // Create a fallback roughness map (medium gray)
+        const fallbackCanvas = document.createElement('canvas');
+        fallbackCanvas.width = 64;
+        fallbackCanvas.height = 64;
+        const ctx = fallbackCanvas.getContext('2d');
+        ctx.fillStyle = '#808080'; // 50% gray
+        ctx.fillRect(0, 0, 64, 64);
+        roadRoughnessMap.image = fallbackCanvas;
+        roadRoughnessMap.needsUpdate = true;
+    }
+);
 roadRoughnessMap.wrapS = THREE.RepeatWrapping;
 roadRoughnessMap.wrapT = THREE.RepeatWrapping;
 roadRoughnessMap.repeat.set(8, 50); // <<< Match repetition
@@ -683,7 +784,23 @@ roadRoughnessMap.minFilter = THREE.LinearMipmapLinearFilter;
 roadRoughnessMap.magFilter = THREE.NearestFilter;           // <<< Changed to NearestFilter
 
 // --- Load AO MAP ---
-const roadAoMap = textureLoader.load('road_ao.jpg');
+const roadAoMap = textureLoader.load(
+    'road_ao.jpg',
+    undefined,
+    undefined,
+    function (error) {
+        console.error('Error loading road AO texture:', error);
+        // Create a fallback AO map (white = no occlusion)
+        const fallbackCanvas = document.createElement('canvas');
+        fallbackCanvas.width = 64;
+        fallbackCanvas.height = 64;
+        const ctx = fallbackCanvas.getContext('2d');
+        ctx.fillStyle = '#ffffff'; // White = no ambient occlusion
+        ctx.fillRect(0, 0, 64, 64);
+        roadAoMap.image = fallbackCanvas;
+        roadAoMap.needsUpdate = true;
+    }
+);
 roadAoMap.wrapS = THREE.RepeatWrapping;
 roadAoMap.wrapT = THREE.RepeatWrapping;
 roadAoMap.repeat.set(8, 50); // <<< Match repetition
@@ -694,16 +811,16 @@ roadAoMap.magFilter = THREE.NearestFilter;           // <<< Changed to NearestFi
 const roadGeometry = new THREE.PlaneGeometry(ROAD_WIDTH, 1000);
 roadGeometry.setAttribute('uv2', new THREE.BufferAttribute(roadGeometry.attributes.uv.array, 2));
 
-// Change to MeshStandardMaterial for consistency with PBR workflow
+// Change to MeshStandardMaterial for consistency with PBR workflow - Improved visibility
 const roadMaterial = new THREE.MeshStandardMaterial({
     map: roadTexture,
     normalMap: roadNormalMap,
     roughnessMap: roadRoughnessMap,
     aoMap: roadAoMap,
-    aoMapIntensity: 0.5,      // <<< Further reduced AO intensity
-    color: 0xffffff,
-    metalness: 0.1,
-    normalScale: new THREE.Vector2(0.2, 0.2) // <<< Further reduced normal scale
+    aoMapIntensity: 0.8,      // Increased from 0.5 for better shadow definition
+    color: 0x4a4a4a,          // Darker gray for better contrast
+    metalness: 0.0,           // Reduced metalness for more asphalt-like appearance
+    normalScale: new THREE.Vector2(0.5, 0.5) // Increased from 0.2 for better bump visibility
 });
 const roadPlane = new THREE.Mesh(roadGeometry, roadMaterial);
 roadPlane.rotation.x = -Math.PI / 2; 
@@ -715,20 +832,22 @@ scene.add(roadPlane);
 
 // Game loop
 function gameLoop() {
-
-    // Store pre-update velocity
-    const preUpdateVelocity = car.velocityZ;
-    
-    update();
-    
-    // Check if velocity changed dramatically outside updateCar
-    if (Math.abs(car.velocityZ - preUpdateVelocity) > 0.5 && keys.w && preUpdateVelocity >= MAX_SPEED - 0.1) {
-        console.warn(`Velocity change detected: ${preUpdateVelocity.toFixed(2)} → ${car.velocityZ.toFixed(2)}`);
-    }
-    
-    // Force maintain speed if W is pressed and already at max speed
-    if (keys.w && car.velocityZ >= MAX_SPEED - 0.1) {
-        car.velocityZ = MAX_SPEED;
+    // Only update game state if not game over
+    if (!gameOver) {
+        // Store pre-update velocity
+        const preUpdateVelocity = car.velocityZ;
+        
+        update();
+        
+        // Check if velocity changed dramatically outside updateCar
+        if (Math.abs(car.velocityZ - preUpdateVelocity) > 0.5 && keys.w && preUpdateVelocity >= MAX_SPEED - 0.1) {
+            console.warn(`Velocity change detected: ${preUpdateVelocity.toFixed(2)} → ${car.velocityZ.toFixed(2)}`);
+        }
+        
+        // Force maintain speed if W is pressed and already at max speed
+        if (keys.w && car.velocityZ >= MAX_SPEED - 0.1) {
+            car.velocityZ = MAX_SPEED;
+        }
     }
     
     renderer.render(scene, camera);
@@ -739,12 +858,31 @@ function gameLoop() {
 function startGameLoop() {
     console.log(">>> startGameLoop function called! <<<"); // ADDED THIS LOG
     console.log("Starting game loop...");
+    // Hide start screen, show HUD and controls
+    document.getElementById('startScreen').style.display = 'none';
+    document.getElementById('hud').style.display = 'flex';
+    document.getElementById('controls').style.display = 'block';
+    document.getElementById('gameOverScreen').style.display = 'none';
+    
     resetGame(); // Ensure clean state on start
+    gameOver = false; // Reset game over flag
     gameLoop();
 }
 
-// Start game
-startGameLoop(); 
+// Start game - wait for user to click start button
+document.getElementById('startBtn').addEventListener('click', startGameLoop);
+document.getElementById('restartBtn').addEventListener('click', function() {
+    document.getElementById('gameOverScreen').style.display = 'none';
+    document.getElementById('hud').style.display = 'flex';
+    document.getElementById('controls').style.display = 'block';
+    startGameLoop();
+});
+
+// Show start screen initially
+document.getElementById('startScreen').style.display = 'flex';
+document.getElementById('hud').style.display = 'none';
+document.getElementById('controls').style.display = 'none';
+document.getElementById('gameOverScreen').style.display = 'none';
 
 // Create speed bump function
 function createSpeedBump() {

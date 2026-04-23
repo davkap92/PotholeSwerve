@@ -1,73 +1,250 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pothole Swerve</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
-    <style>
-        body {
-            margin: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background-color: #333;
-        }
-        canvas {
-            border: 2px solid #fff;
-            background-color: #666;
-        }
-        #healthBar {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            width: 200px;
-            height: 20px;
-            background-color: #444;
-            border: 2px solid #fff;
-        }
-        #healthFill {
-            width: 100%;
-            height: 100%;
-            background-color: #4CAF50;
-            transition: width 0.3s ease;
-        }
-        #speedometer {
-            position: fixed;
-            top: 50px;
-            left: 20px;
-            color: white;
-            font-family: Arial, sans-serif;
-            font-size: 18px;
-            background-color: rgba(0, 0, 0, 0.5);
-            padding: 5px 10px;
-            border-radius: 5px;
-        }
-        #scoreDisplay {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            color: white;
-            font-family: Arial, sans-serif;
-            font-size: 18px;
-            background-color: rgba(0, 0, 0, 0.5);
-            padding: 5px 10px;
-            border-radius: 5px;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pothole Swerve</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden;
+  }
+  #gameContainer {
+    position: relative;
+    width: 900px;
+    height: 650px;
+  }
+  canvas {
+    border-radius: 12px;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+  }
+  #hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+  .hud-panel {
+    background: rgba(0, 0, 0, 0.75);
+    border-radius: 10px;
+    padding: 12px 18px;
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+  }
+  #healthBar {
+    width: 220px;
+    height: 24px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+  }
+  #healthFill {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #e74c3c, #f39c12, #2ecc71);
+    background-size: 300% 100%;
+    transition: width 0.3s ease, background-position 0.5s ease;
+    border-radius: 10px;
+  }
+  #speedometer {
+    font-size: 22px;
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  }
+  #speedometer span {
+    color: #3498db;
+    font-size: 28px;
+  }
+  #scoreDisplay {
+    font-size: 22px;
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  }
+  #scoreDisplay span {
+    color: #f1c40f;
+    font-size: 28px;
+  }
+  #controls {
+    position: absolute;
+    bottom: 15px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px 25px;
+    border-radius: 25px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 14px;
+    pointer-events: none;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  #loadingScreen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-radius: 12px;
+    z-index: 100;
+  }
+  #loadingScreen h1 {
+    color: #e74c3c;
+    font-size: 48px;
+    margin-bottom: 10px;
+    text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.5);
+    letter-spacing: 4px;
+  }
+  #loadingScreen h2 {
+    color: #3498db;
+    font-size: 24px;
+    margin-bottom: 40px;
+    font-weight: normal;
+  }
+  #progressContainer {
+    width: 400px;
+    height: 20px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+  }
+  #progressBar {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #3498db, #2ecc71);
+    transition: width 0.3s ease;
+    border-radius: 8px;
+  }
+  #loadingText {
+    margin-top: 20px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 16px;
+  }
+  #startScreen, #gameOverScreen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-radius: 12px;
+    z-index: 50;
+  }
+  #startScreen h1, #gameOverScreen h1 {
+    color: #e74c3c;
+    font-size: 56px;
+    margin: 0 0 10px 0;
+    text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.5);
+    letter-spacing: 6px;
+  }
+  #gameOverScreen h1 {
+    color: #e74c3c;
+  }
+  #startScreen h2 {
+    color: #ecf0f1;
+    font-size: 20px;
+    font-weight: normal;
+    margin-bottom: 50px;
+  }
+  #startBtn, #restartBtn {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    border: none;
+    padding: 18px 60px;
+    font-size: 24px;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 6px 20px rgba(231, 76, 60, 0.4);
+    letter-spacing: 2px;
+  }
+  #startBtn:hover, #restartBtn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(231, 76, 60, 0.6);
+  }
+  #finalScore {
+    color: #f1c40f;
+    font-size: 36px;
+    margin: 20px 0 40px 0;
+  }
+  .instructions {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 14px;
+    margin-top: 30px;
+    text-align: center;
+    line-height: 1.8;
+  }
+</style>
 </head>
 <body>
-    <div id="gameContainer">
-        <canvas id="gameCanvas"></canvas>
-        <div id="healthBar">
-            <div id="healthFill"></div>
-        </div>
-        <div id="speedometer">Speed: 0</div>
-        <div id="scoreDisplay">Score: 0</div>
+<div id="gameContainer">
+  <canvas id="gameCanvas" width="900" height="650"></canvas>
+
+  <div id="loadingScreen">
+    <h1>POTHOLE SWERVE</h1>
+    <h2>Navigate the treacherous roads</h2>
+    <div id="progressContainer">
+      <div id="progressBar"></div>
     </div>
-    <script src="game.js"></script>
+    <div id="loadingText">Loading assets...</div>
+  </div>
+
+  <div id="startScreen">
+    <h1>POTHOLE SWERVE</h1>
+    <h2>Navigate the treacherous roads</h2>
+    <button id="startBtn">START</button>
+    <div class="instructions">
+      <strong>Controls:</strong> Arrow Keys or A/D to steer &nbsp;|&nbsp; W to accelerate &nbsp;|&nbsp; S to brake<br>
+      Avoid potholes and slow down for speed bumps!
+    </div>
+  </div>
+
+  <div id="gameOverScreen">
+    <h1>GAME OVER</h1>
+    <div id="finalScore">Score: 0</div>
+    <button id="restartBtn">PLAY AGAIN</button>
+  </div>
+
+  <div id="hud" style="display: none;">
+    <div class="hud-panel">
+      <div id="healthBar">
+        <div id="healthFill"></div>
+      </div>
+    </div>
+    <div class="hud-panel">
+      <div id="speedometer">Speed: <span>0</span> mph</div>
+    </div>
+    <div class="hud-panel">
+      <div id="scoreDisplay">Score: <span>0</span></div>
+    </div>
+  </div>
+
+  <div id="controls" style="display: none;">← → Steer &nbsp;|&nbsp; W Accelerate &nbsp;|&nbsp; S Brake</div>
+</div>
+<script src="game.js"></script>
 </body>
-</html> 
+</html>
